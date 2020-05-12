@@ -13,7 +13,7 @@ import {
   findIndex,
   isString,
 } from '@antv/util';
-import { View, BBox, Geometry, VIEW_LIFE_CIRCLE, registerComponentController, Gesture } from '../dependents';
+import { View, Geometry, VIEW_LIFE_CIRCLE, registerComponentController, Gesture } from '../dependents';
 import TextDescription from '../components/description';
 import BaseLabel, { LabelComponentConfig, getLabelComponent } from '../components/label/base';
 import { getComponent } from '../components/factory';
@@ -42,6 +42,7 @@ import ThemeController from './controller/theme';
 import Layer, { LayerConfig } from './layer';
 import { isTextUsable } from '../util/common';
 import { LooseMap } from '../interface/types';
+import BBox, { DIRECTION } from '../util/bbox';
 
 export interface ViewConfig {
   renderer?: string;
@@ -525,6 +526,13 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
   }
 
   protected applyInteractions(): void {
+    let range = BBox.fromBBoxObject(this.layerBBox);
+
+    // 临时去掉 title/description 的占用
+    const titleOrDesc = this.title || this.description;
+    const extraBBox = new BBox(range.minX, range.minY, range.width, titleOrDesc ? titleOrDesc.getBBox().maxY : 0);
+    range = range.cut(extraBBox, DIRECTION.TOP);
+
     const { interactions = [] } = this.options;
     if (this.interactions) {
       this.interactions.forEach((inst) => {
@@ -538,9 +546,10 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
         const inst: BaseInteraction = new Ctor(
           { view: this.view },
           this,
-          Ctor.getInteractionRange(this.layerBBox, interaction.cfg),
+          Ctor.getInteractionRange(range, interaction.cfg),
           interaction.cfg
         );
+        inst.render();
         this.interactions.push(inst);
       }
     });
@@ -663,6 +672,7 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
     const Ctor = getLabelComponent(label.type);
     if (Ctor) {
       const label = new Ctor(config);
+      label.init();
       label.render();
       this.labels.push(label);
     }
@@ -699,7 +709,8 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
   protected getViewRange() {
     // 有 Range 的 Interaction 参与 ViewMargin 计算
     const { interactions = [] } = this.options;
-    const layerBBox = this.layerBBox;
+    // const layerBBox = this.layerBBox;
+    const layerBBox = this.paddingController.processOuterPadding();
     interactions.forEach((interaction) => {
       const Ctor: InteractionCtor | undefined = BaseInteraction.getInteraction(interaction.type, this.type);
       const range: BBox | undefined = Ctor && Ctor.getInteractionRange(layerBBox, interaction.cfg);
@@ -715,12 +726,14 @@ export default abstract class ViewLayer<T extends ViewLayerConfig = ViewLayerCon
         } else if (range.minX === layerBBox.minX && range.maxX > layerBBox.maxX) {
           // margin[3] += range.width;
           position = 'left';
-        } else if (range.minY === layerBBox.minY && range.maxY > layerBBox.maxY) {
+        } else if (range.minY === layerBBox.minY && range.maxY < layerBBox.maxY) {
           // margin[0] += range.height;
           position = 'top';
         }
         this.paddingController.registerPadding(
           {
+            interaction: interaction.type,
+            name: interaction.type,
             getBBox: () => {
               return range;
             },

@@ -77,3 +77,10 @@ export function sortedLastIndex<T>(arr: T[], val: T): number {
   }
   return i;
 }
+
+/**
+ * 判断是否移动端环境
+ */
+export function isMobile() {
+  return !!navigator.userAgent.match(/(Mobile)|(Android)|(WebOS)|(iPhone)|(iPad)/);
+}
